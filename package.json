@@ -7,8 +7,8 @@
   "description": "YAML parser with more options",
   "main": "index.js",
   "scripts": {
-    "start": "node_modules/@babel/node/bin/babel-node.js --inspect-brk index.js",
-    "test": "node_modules/mocha/bin/mocha --require @babel/polyfill --require @babel/register --inspect-brk test/test.js"
+    "start": "node_modules/@babel/node/bin/babel-node.js index.js",
+    "test": "node_modules/mocha/bin/mocha --require @babel/polyfill --require @babel/register test/test.js"
   },
   "author": "Abhirav Kumar <akabhirav@gmail.com>",
   "license": "ISC",
