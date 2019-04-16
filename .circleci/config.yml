@@ -1,4 +1,12 @@
 version: 2
+workflows:
+  version: 2
+  "Build and Test":
+    jobs:
+      - build
+      - test:
+          requires:
+            - build
 jobs:
   build:
     docker:
@@ -21,5 +29,19 @@ jobs:
           paths:
             - node_modules
           key: v1-dependencies-{{ checksum "package.json" }}
+  test:
+    docker:
+      - image: circleci/node:10.15
+
+
+    working_directory: ~/repo
+
+    steps:
+      - checkout
+
+      - restore_cache:
+          keys:
+            - v1-dependencies-{{ checksum "package.json" }}
+            - v1-dependencies-
 
       - run: npm test
