@@ -7,11 +7,13 @@ workflows:
       - test:
           requires:
             - build
+      - upload-coverage:
+          requires:
+            - test
 jobs:
   build:
     docker:
       - image: circleci/node:10.15
-
 
     working_directory: ~/repo
 
@@ -24,6 +26,18 @@ jobs:
             - v1-dependencies-
 
       - run: npm install
+
+      - run:
+          name:  Download cc-test-reporter
+          command: |
+            mkdir -p tmp/
+            curl -L https://codeclimate.com/downloads/test-reporter/test-reporter-latest-linux-amd64 > ./tmp/cc-test-reporter
+            chmod +x ./tmp/cc-test-reporter
+
+      - persist_to_workspace:
+          root: tmp
+          paths:
+            - cc-test-reporter
 
       - save_cache:
           paths:
@@ -39,9 +53,38 @@ jobs:
     steps:
       - checkout
 
+      - attach_workspace:
+          at: ~/repo/tmp
+
       - restore_cache:
           keys:
             - v1-dependencies-{{ checksum "package.json" }}
             - v1-dependencies-
 
-      - run: npm test
+      - run:
+          name: Parser Test
+          command: |
+            npm test
+            ./tmp/cc-test-reporter format-coverage -t lcov -o tmp/codeclimate.frontend.json coverage/frontend/lcov.info
+
+      - persist_to_workspace:
+          root: tmp
+          paths:
+            - codeclimate.frontend.json
+
+  upload-coverage:
+    docker:
+      - image: circleci/node:10.15
+
+    working_directory: ~/rep
+
+    environment:
+      - CC_TEST_REPORTER_ID: bc0ff0de20b4a68dd363a8ec0136b2a8b76deeab6df0e5d0f5b77bc6e1756fbe
+    steps:
+      - attach_workspace:
+          at: ~/repo/tmp
+      - run:
+          name: Upload coverage results to Code Climate
+          command: |
+            ./tmp/cc-test-reporter sum-coverage tmp/codeclimate.*.json -p 2 -o tmp/codeclimate.total.json
+            ./tmp/cc-test-reporter upload-coverage -i tmp/codeclimate.total.j
