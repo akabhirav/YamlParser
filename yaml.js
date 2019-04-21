@@ -1,6 +1,6 @@
 import Log from "./log";
 
-let removeQuotes = (string) => {
+let removeQuotesFn = (string) => {
     if (string === undefined)
         return string;
     let replaceDupApos = false;
@@ -28,12 +28,10 @@ class Line {
         if (this.line === "")
             return -1;
         let searchableLine = this.line;
-        if (this.isCollectionElement())
-            searchableLine = searchableLine.replace(/-/, ' ');
         return searchableLine.search(Line.FIRST_CHARACTER)
     };
 
-    isLineCommented = () => {
+    isComment = () => {
         return Line.COMMENTED_LINE.test(this.line);
     };
 
@@ -43,26 +41,6 @@ class Line {
             return;
         this.line = this.line.substring(0, commentStartPos)
     }
-
-    getKeyValue = (toRemoveQuotes) => {
-        this.removeInlineComments();
-        let onlyValue = this.line.indexOf(":") === -1 || this.line.trim().indexOf(":") === 0;
-        let key, value;
-        [key, value] = this.line.trim()
-            .replace(/^-/, '')
-            .split(/:(.*)/).filter(str => !!str).filter(str => str !== " ")
-            .map(str => str.trim());
-        if (toRemoveQuotes) {
-            key = removeQuotes(key);
-            value = removeQuotes(value)
-        }
-        if (onlyValue) {
-            return [undefined, key];
-        } else {
-            return [key, value];
-        }
-
-    };
 
     isEmpty = () => {
         return this.line === null || this.line.trim() === ''
@@ -83,8 +61,102 @@ class Line {
     toString = () => {
         return this.line
     };
+
+    hasOnlyValue = () => {
+        return this.line.toString().indexOf(":") === -1 || this.line.trim().indexOf(":") === 0;
+    }
 }
 
+
+class YamlLines {
+    lines = [];
+    currentIndex = -1;
+    maxIndex;
+
+    blockIndentation = [];
+
+    constructor(lines) {
+        this.lines = lines.map(line => new Line(line)).filter(line => !line.isEmpty() || !line.isComment());
+        this.maxIndex = lines.length - 1;
+    }
+
+    /**
+     * @returns Line Next Line object
+     * */
+    nextLine = () => {
+        return this.lines[++this.currentIndex];
+    };
+
+    /**
+     * @returns Line Line object for current Line
+     * */
+    currentLine = () => {
+        return this.lines[this.currentIndex];
+    };
+
+    /**
+     * @returns Number Starting Indentation of last block
+     * */
+    lastBlockIndent = () => {
+        return this.blockIndentation[this.blockIndentation.length - 1];
+    };
+
+    startBlock = () => {
+        this.blockIndentation.push(this.currentLine().getIndent());
+    };
+
+    /**
+     * @returns Boolean Whether the current line is inside the last block
+     * */
+    isInsideBlock = () => {
+        if (!this.currentLine())
+            return false;
+        return this.currentLine().getIndent() <= this.lastBlockIndent()
+    };
+
+    endBlock = () => {
+        this.blockIndentation.pop();
+    };
+
+    isCollectionElement = () => {
+        return this.currentLine().isCollectionElement();
+    };
+
+    getKeyValue = (removeQuotes) => {
+        this.currentLine().removeInlineComments();
+        let onlyValue = this.currentLine().hasOnlyValue();
+        let key, value;
+        [key, value] = this.currentLine().toString().trim()
+            .replace(/^-/, '')
+            .split(/:(.*)/).filter(str => !!str).filter(str => str !== " ")
+            .map(str => str.trim());
+        if (removeQuotes) {
+            key = removeQuotesFn(key);
+            value = removeQuotesFn(value)
+        }
+        if (onlyValue) {
+            value = key;
+            key = undefined;
+        }
+        let stringArr = [];
+        if (value !== undefined)
+            stringArr.push(value);
+        let indent = this.currentLine().getIndent();
+        this.nextLine();
+        if (this.currentLine() && !this.currentLine().notCollectionOrObject() && indent === this.currentLine().getIndent())
+            value = null;
+        while (this.currentLine() && this.currentLine().notCollectionOrObject() && indent < this.currentLine().getIndent()) {
+            stringArr.push(this.currentLine().toString().trim());
+            this.nextLine();
+        }
+        value = stringArr.join(' ') || value;
+        // noinspection EqualityComparisonWithCoercionJS
+        return [key, (parseFloat(value) == value) ? parseFloat(value) : value]
+    }
+}
+
+
+let yamlLines;
 
 class YAMLProcessor {
     stringifyOptions = {
@@ -102,6 +174,9 @@ class YAMLProcessor {
 
     data;
 
+    /**
+     * @param {YamlLines, JSON} data Data on which the operations need to run
+     * */
     constructor(data) {
         this.data = data;
     }
@@ -119,6 +194,20 @@ class YAMLProcessor {
                 else {
                     string = this.stringifyObject(json[key], string, indentation + 1);
                 }
+            }
+        });
+        return string;
+    }
+
+    stringifyArray(json, startString, indentation) {
+        let string = startString;
+        let indent = this.generateIndentation(indentation);
+        json.forEach((object) => {
+            if (typeof object === 'string' || object === null) {
+                string += `${indent}- ${this.processValue(object)}\n`
+            } else if (typeof object === 'object') {
+                string += `${this.generateIndentation(indentation)}- `;
+                string = this.stringifyObject(object, string, indentation + 1, true);
             }
         });
         return string;
@@ -152,117 +241,62 @@ class YAMLProcessor {
         return string
     };
 
-    stringifyArray(json, startString, indentation) {
-        let string = startString;
-        let indent = this.generateIndentation(indentation);
-        json.forEach((object) => {
-            if (typeof object === 'string' || object === null) {
-                string += `${indent}- ${this.processValue(object)}\n`
-            } else if (typeof object === 'object') {
-                string += `${this.generateIndentation(indentation)}- `;
-                string = this.stringifyObject(object, string, indentation + 1, true);
-            }
-        });
-        return string;
-    }
-
-    parseArray = (lines, startIndex, startIndent) => {
-        let line = new Line(lines[startIndex]);
-        let index = startIndex;
-        let array = [], currentObject = null;
-        while (startIndent <= line.getIndent()) {
-            if (line.isCollectionElement()) {
-                if (currentObject !== null && Object.keys(currentObject).length)
-                    array.push(currentObject);
-                currentObject = {};
-            }
-            let key, value;
-            [key, value] = line.getKeyValue(this.parseOptions.removeQuotes);
-            if (key in currentObject) {
-                Log.error(`Duplicate Key ${key} on line ${index + 1}`)
-            }
-            index++;
-            [value, index] = this.getValue(lines, index, value, startIndent);
-            line = new Line(lines[index]);
-            let newLineIndent = line.getIndent();
-            if (value || value === "" || value === null || (key === undefined && value === undefined)) {
-                if (key === undefined) {
-                    if (value !== undefined)
-                        array.push(value);
-                } else
-                    currentObject[key] = value;
-            } else {
-                if (newLineIndent < startIndent)
-                    break;
-                if (line.isCollectionElement()) {
-                    [currentObject[key], index] = this.parseArray(lines, index, newLineIndent);
-                } else {
-                    [currentObject[key], index] = this.parseObject(lines, index, newLineIndent);
-                }
-                line = new Line(lines[index]);
-            }
-        }
-        if (Object.keys(currentObject).length)
-            array.push(currentObject);
-        return [array, index];
-    };
-
-    parseObject = (lines, startIndex, startIndent) => {
-        let line = new Line(lines[startIndex]);
-        let index = startIndex;
-        let object = {};
-        while (startIndent === line.getIndent()) {
-            let key, value;
-            [key, value] = line.getKeyValue(this.parseOptions.removeQuotes);
-            if (key in object) {
-                Log.error(`Duplicate Key ${key} on line ${index + 1}`)
-            }
-            index++;
-            [value, index] = this.getValue(lines, index, value, startIndent);
-            line = new Line(lines[index]);
-            let newLineIndent = line.getIndent();
-            if (value || value === "" || value === null)
-                object[key] = value;
-            else {
-                if (newLineIndent < startIndent)
-                    break;
-                if (line.isCollectionElement()) {
-                    [object[key], index] = this.parseArray(lines, index, newLineIndent);
-                } else {
-                    [object[key], index] = this.parseObject(lines, index, newLineIndent);
-                }
-                line = new Line(lines[index]);
-            }
-
-        }
-        return [object, index];
-    };
-
-    getValue = (lines, startIndex, startString, indent) => {
-        let index = startIndex;
-        let stringArr = [];
-        if (startString !== undefined)
-            stringArr.push(startString);
-        let line = new Line(lines[index]);
-        if (!line.notCollectionOrObject() && indent === line.getIndent())
-            startString = null;
-        while (line.notCollectionOrObject()) {
-            stringArr.push(line.getKeyValue(this.parseOptions.removeQuotes)[1].trim());
-            index++;
-            line = new Line(lines[index]);
-        }
-        let value = stringArr.join(' ') || startString;
-        // noinspection EqualityComparisonWithCoercionJS
-        return [(parseFloat(value) == value) ? parseFloat(value) : value, index]
-    };
-
     generateIndentation = (indentation) => {
         let indent = "";
         for (let i = 0; i < indentation * this.stringifyOptions.indentation; i++) {
             indent += " "
         }
         return indent;
-    }
+    };
+
+    parseArray = () => {
+        yamlLines.startBlock();
+        let array = [], currentObject = null;
+        do {
+            if (yamlLines.isCollectionElement()) {
+                if (currentObject !== null && Object.keys(currentObject).length)
+                    array.push(currentObject);
+                currentObject = {};
+            }
+            let key, value;
+            [key, value] = yamlLines.getKeyValue(this.parseOptions.removeQuotes);
+            if (value || value === "" || value === null || key === undefined || value === undefined) {
+                if (key === undefined) {
+                    if (value !== undefined)
+                        array.push(value);
+                } else
+                    currentObject[key] = value;
+            } else {
+                currentObject[key] = yamlLines.isCollectionElement() ? this.parseArray() : this.parseObject();
+            }
+        } while (yamlLines.isInsideBlock());
+        yamlLines.endBlock();
+        if (Object.keys(currentObject).length)
+            array.push(currentObject);
+        return array;
+    };
+
+    parseObject = () => {
+        yamlLines.startBlock();
+        let object = {};
+        do {
+            let key, value;
+            [key, value] = yamlLines.getKeyValue(this.parseOptions.removeQuotes);
+            if (key in object) {
+                Log.error(`Duplicate Key ${key} on line ${index + 1}`)
+            }
+            if (value || value === "" || value === null){
+                if(!key)
+                    throw SyntaxError('No Key defined for value');
+                object[key] = value;
+            }
+            else {
+                object[key] = yamlLines.isCollectionElement() ? this.parseArray() : this.parseObject();
+            }
+        } while (yamlLines.isInsideBlock());
+        yamlLines.endBlock();
+        return object;
+    };
 }
 
 
@@ -271,25 +305,12 @@ export default class YAML {
     static parse = (string, parseOptions = {}) => {
         if (!(typeof string === 'string'))
             throw new SyntaxError('Unexpected context, was expecting a string');
-        let processor = new YAMLProcessor(string);
+        yamlLines = new YamlLines(string.split("\n"));
+        let processor = new YAMLProcessor(yamlLines);
         processor.parseOptions = {...processor.parseOptions, ...parseOptions};
         let outputJSON;
-        let lines = processor.data.split("\n").filter((line) => {
-            let yamlLine = new Line(line);
-            return !(yamlLine.isEmpty() || yamlLine.isLineCommented());
-        });
-        let lowestIndent = Infinity;
-        for (let i = 0; i < lines.length; i++) {
-            let yamlLine = new Line(lines[i]);
-            if (yamlLine.getIndent() < lowestIndent) {
-                lowestIndent = yamlLine.getIndent();
-            }
-            let indent = yamlLine.getIndent();
-            if (yamlLine.isCollectionElement()) {
-                [outputJSON, i] = processor.parseArray(lines, i, indent)
-            } else {
-                [outputJSON, i] = processor.parseObject(lines, i, indent)
-            }
+        while (yamlLines.nextLine()) {
+            outputJSON = yamlLines.isCollectionElement() ? processor.parseArray() : processor.parseObject();
         }
         return outputJSON;
     };
