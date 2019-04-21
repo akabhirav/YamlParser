@@ -76,7 +76,7 @@ class YamlLines {
     blockIndentation = [];
 
     constructor(lines) {
-        this.lines = lines.map(line => new Line(line)).filter(line => !line.isEmpty() || !line.isComment());
+        this.lines = lines.map(line => new Line(line)).filter(line => !(line.isEmpty() || line.isComment()));
         this.maxIndex = lines.length - 1;
     }
 
@@ -111,7 +111,7 @@ class YamlLines {
     isInsideBlock = () => {
         if (!this.currentLine())
             return false;
-        return this.currentLine().getIndent() <= this.lastBlockIndent()
+        return this.currentLine().getIndent() >= this.lastBlockIndent()
     };
 
     endBlock = () => {
@@ -152,7 +152,11 @@ class YamlLines {
         value = stringArr.join(' ') || value;
         // noinspection EqualityComparisonWithCoercionJS
         return [key, (parseFloat(value) == value) ? parseFloat(value) : value]
-    }
+    };
+
+    logError = (message) => {
+        Log.error(message + this.currentIndex)
+    };
 }
 
 
@@ -283,7 +287,7 @@ class YAMLProcessor {
             let key, value;
             [key, value] = yamlLines.getKeyValue(this.parseOptions.removeQuotes);
             if (key in object) {
-                Log.error(`Duplicate Key ${key} on line ${index + 1}`)
+                yamlLines.logError(`Duplicate Key ${key} on line `);
             }
             if (value || value === "" || value === null){
                 if(!key)
