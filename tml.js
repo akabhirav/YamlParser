@@ -8,8 +8,9 @@ export default class TML {
     getSection = (sectionName) => {
         let sectionText = this.content.split('--- ')
             .filter(section => section.split("\n")[0].indexOf(sectionName) === 0)[0];
+        let removeRegex = new RegExp(sectionName + "(\\(<\\))?");
         if (!!sectionText)
-            return sectionText.replace(sectionName, '');
+            return sectionText.replace(removeRegex, '');
         return null;
     };
 

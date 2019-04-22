@@ -35,6 +35,10 @@ class Line {
         return this.line.replace(/(\s*)-/, '$1').search(Line.FIRST_CHARACTER)
     };
 
+    isStartBlock = () => {
+        return this.line.indexOf('---') > -1
+    };
+
     isComment = () => {
         return Line.COMMENTED_LINE.test(this.line);
     };
@@ -80,7 +84,7 @@ class YamlLines {
     blockIndentation = [];
 
     constructor(lines) {
-        this.lines = lines.map(line => new Line(line)).filter(line => !(line.isEmpty() || line.isComment()));
+        this.lines = lines.map(line => new Line(line)).filter(line => !(line.isEmpty() || line.isComment() || line.isStartBlock()));
         this.maxIndex = lines.length - 1;
     }
 
@@ -292,7 +296,6 @@ class YAMLProcessor {
     };
 
     parseObject = () => {
-        debugger;
         yamlLines.startBlock();
         let object = {};
         do {
