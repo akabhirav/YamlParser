@@ -24,11 +24,15 @@ class Line {
         this.line = string || "";
     }
 
-    getIndent = () => {
+    getLineIndent = () => {
         if (this.line === "")
             return -1;
         let searchableLine = this.line;
         return searchableLine.search(Line.FIRST_CHARACTER)
+    };
+
+    getCollectionIndent = () => {
+        return this.line.replace(/(\s*)-/, '$1').search(Line.FIRST_CHARACTER)
     };
 
     isComment = () => {
@@ -102,7 +106,11 @@ class YamlLines {
     };
 
     startBlock = () => {
-        this.blockIndentation.push(this.currentLine().getIndent());
+        if (this.currentLine().isCollectionElement())
+            this.blockIndentation.push(this.currentLine().getCollectionIndent());
+        else
+
+            this.blockIndentation.push(this.currentLine().getLineIndent());
     };
 
     /**
@@ -111,7 +119,10 @@ class YamlLines {
     isInsideBlock = () => {
         if (!this.currentLine())
             return false;
-        return this.currentLine().getIndent() >= this.lastBlockIndent()
+        if (this.currentLine().isCollectionElement())
+            return this.currentLine().getCollectionIndent() >= this.lastBlockIndent();
+        else
+            return this.currentLine().getLineIndent() >= this.lastBlockIndent();
     };
 
     endBlock = () => {
@@ -141,11 +152,11 @@ class YamlLines {
         let stringArr = [];
         if (value !== undefined)
             stringArr.push(value);
-        let indent = this.currentLine().getIndent();
+        let indent = this.currentLine().getLineIndent();
         this.nextLine();
-        if (this.currentLine() && !this.currentLine().notCollectionOrObject() && indent === this.currentLine().getIndent())
+        if (this.currentLine() && !this.currentLine().notCollectionOrObject() && indent === this.currentLine().getLineIndent())
             value = null;
-        while (this.currentLine() && this.currentLine().notCollectionOrObject() && indent < this.currentLine().getIndent()) {
+        while (this.currentLine() && this.currentLine().notCollectionOrObject() && indent < this.currentLine().getLineIndent()) {
             stringArr.push(this.currentLine().toString().trim());
             this.nextLine();
         }
@@ -264,15 +275,15 @@ class YAMLProcessor {
             }
             let key, value;
             [key, value] = yamlLines.getKeyValue(this.parseOptions.removeQuotes);
-            if (value || value === "" || value === null || key === undefined || value === undefined) {
-                if (key === undefined) {
-                    if (value !== undefined)
-                        array.push(value);
-                } else
-                    currentObject[key] = value;
-            } else {
-                currentObject[key] = yamlLines.isCollectionElement() ? this.parseArray() : this.parseObject();
-            }
+            // if (value || value === "" || value === null || key === undefined || value === undefined) {
+            if (key === undefined) {
+                if (value !== undefined)
+                    array.push(value);
+            } else
+                currentObject[key] = value;
+            // } else {
+            //     currentObject[key] = yamlLines.isCollectionElement() ? this.parseArray() : this.parseObject();
+            // }
         } while (yamlLines.isInsideBlock());
         yamlLines.endBlock();
         if (Object.keys(currentObject).length)
@@ -281,6 +292,7 @@ class YAMLProcessor {
     };
 
     parseObject = () => {
+        debugger;
         yamlLines.startBlock();
         let object = {};
         do {
@@ -289,12 +301,11 @@ class YAMLProcessor {
             if (key in object) {
                 yamlLines.logError(`Duplicate Key ${key} on line `);
             }
-            if (value || value === "" || value === null){
-                if(!key)
+            if (value || value === "") {
+                if (!key)
                     throw SyntaxError('No Key defined for value');
                 object[key] = value;
-            }
-            else {
+            } else {
                 object[key] = yamlLines.isCollectionElement() ? this.parseArray() : this.parseObject();
             }
         } while (yamlLines.isInsideBlock());
