@@ -72,6 +72,30 @@ class Line {
 
     hasOnlyValue = () => {
         return this.line.toString().indexOf(":") === -1 || this.line.trim().indexOf(":") === 0;
+    };
+
+    isNotToBeParsed = () => {
+        return !(this.isEmpty() || this.isComment() || this.isStartBlock())
+    }
+}
+
+class Scalar{
+    type;
+    value;
+
+    TYPES = {
+        'NUMBER': Number,
+        'STRING': String,
+        'NULL': null,
+        'BOOLEAN': Boolean,
+        'UNDEFINED': undefined,
+    };
+
+    constructor(value, type = null) {
+        this.value = value;
+        if(!type){
+            this.type = type;
+        }
     }
 }
 
@@ -84,7 +108,7 @@ class YamlLines {
     blockIndentation = [];
 
     constructor(lines) {
-        this.lines = lines.map(line => new Line(line)).filter(line => !(line.isEmpty() || line.isComment() || line.isStartBlock()));
+        this.lines = lines.map(line => new Line(line)).filter(line => line.isNotToBeParsed());
         this.maxIndex = lines.length - 1;
     }
 
